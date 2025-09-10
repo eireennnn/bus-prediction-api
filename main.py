@@ -1,15 +1,28 @@
+import os
 import pickle
 import pandas as pd
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # Load model & encoder
-with open("model.pkl", "rb") as f:
+with open(os.path.join(BASE_DIR, "model.pkl"), "rb") as f:
     model = pickle.load(f)
-with open("encoder.pkl", "rb") as f:
+with open(os.path.join(BASE_DIR, "encoder.pkl"), "rb") as f:
     encoder = pickle.load(f)
 
 app = FastAPI()
+
+# CORS for Flutter web
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Replace "*" with your Flutter web URL in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Input schema
 class PredictionInput(BaseModel):
