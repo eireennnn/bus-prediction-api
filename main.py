@@ -9,31 +9,18 @@ from pydantic import BaseModel
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Load model and encoder with safe fallback
-model = None
-encoder = None
+# Load model and encoder
+with open(os.path.join(BASE_DIR, "model.pkl"), "rb") as f:
+    model = pickle.load(f)
+with open(os.path.join(BASE_DIR, "encoder.pkl"), "rb") as f:
+    encoder = pickle.load(f)
 
-try:
-    with open(os.path.join(BASE_DIR, "model.pkl"), "rb") as f:
-        model = pickle.load(f)
-        print("✅ model.pkl loaded")
-except Exception as e:
-    print(f"⚠️ model.pkl load error: {e}")
-
-try:
-    with open(os.path.join(BASE_DIR, "encoder.pkl"), "rb") as f:
-        encoder = pickle.load(f)
-        print("✅ encoder.pkl loaded")
-except Exception as e:
-    print(f"⚠️ encoder.pkl load error: {e}")
-
-# Init FastAPI
 app = FastAPI()
 
-# Allow any frontend (adjust in production)
+# CORS for frontend connection
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Replace with actual domain in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -45,7 +32,7 @@ class PredictionInput(BaseModel):
     Month: int | str
     Bus: str
 
-# Month name to number mapping
+# Mapping month names to numbers
 month_map = {
     "January": 1, "February": 2, "March": 3, "April": 4,
     "May": 5, "June": 6, "July": 7, "August": 8,
@@ -54,28 +41,24 @@ month_map = {
 
 @app.get("/")
 def root():
-    return {"message": "✅ Bus Prediction API running. Visit /docs to test."}
+    return {"message": "✅ API is running! Visit /docs to test."}
 
-# 🔍 /predict: for user-side input-based predictions
 @app.post("/predict")
 def predict(input_data: PredictionInput):
-    if model is None or encoder is None:
-        return {"error": "Model or encoder not loaded."}
-    
     try:
         df = pd.DataFrame([input_data.dict()])
         df["Bus"] = df["Bus"].astype(str).str.strip().str.replace("Bus ", "", case=False)
 
-        # Convert Month name to number if needed
+        # Convert Month
         if isinstance(df["Month"].iloc[0], str):
             df["Month"] = df["Month"].replace(month_map).astype(int)
 
+        # Validate Bus
         if df["Bus"].iloc[0] not in encoder.classes_:
             return {"error": f"Bus '{input_data.Bus}' not recognized. Available: {list(encoder.classes_)}"}
 
         df["Bus_Encoded"] = encoder.transform(df["Bus"])
         X_input = df[["Year", "Month", "Bus_Encoded"]]
-
         prediction = model.predict(X_input)[0]
 
         return {
@@ -85,22 +68,16 @@ def predict(input_data: PredictionInput):
             "Predicted_Total_Trips": round(float(prediction[0]), 2),
             "Predicted_Total_Passengers": round(float(prediction[1]), 2)
         }
-
     except Exception as e:
         return {"error": str(e)}
 
-# 📊 /forecast: for admin-side next 5 months prediction (no input)
 @app.get("/forecast")
 def forecast_next_5_months():
-    if model is None or encoder is None:
-        return {"error": "Model or encoder not loaded."}
-    
     try:
         today = datetime.today()
         forecast_data = []
 
-        # Predict for next 5 months starting from next month
-        for i in range(1, 6):
+        for i in range(1, 6):  # Next 5 months
             target_date = today + relativedelta(months=i)
             year = target_date.year
             month = target_date.month
@@ -125,6 +102,11 @@ def forecast_next_5_months():
                     "Predicted_Total_Trips": round(float(prediction[0]), 2),
                     "Predicted_Total_Passengers": round(float(prediction[1]), 2)
                 })
+
+        # Save to CSV
+        df_forecast = pd.DataFrame(forecast_data)
+        csv_path = os.path.join(BASE_DIR, "forecast_output.csv")
+        df_forecast.to_csv(csv_path, index=False)
 
         return forecast_data
 
