@@ -1,42 +1,51 @@
 import os
 import pickle
 import pandas as pd
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# Load model and encoder with safe fallback
 model = None
 encoder = None
 
 try:
     with open(os.path.join(BASE_DIR, "model.pkl"), "rb") as f:
         model = pickle.load(f)
+        print("✅ model.pkl loaded")
 except Exception as e:
-    print(f"Warning: Could not load model.pkl: {e}")
+    print(f"⚠️ model.pkl load error: {e}")
 
 try:
     with open(os.path.join(BASE_DIR, "encoder.pkl"), "rb") as f:
         encoder = pickle.load(f)
+        print("✅ encoder.pkl loaded")
 except Exception as e:
-    print(f"Warning: Could not load encoder.pkl: {e}")
+    print(f"⚠️ encoder.pkl load error: {e}")
 
+# Init FastAPI
 app = FastAPI()
 
+# Allow any frontend (adjust in production)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # adjust this in production!
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Input schema for /predict
 class PredictionInput(BaseModel):
     Year: int
     Month: int | str
     Bus: str
 
+# Month name to number mapping
 month_map = {
     "January": 1, "February": 2, "March": 3, "April": 4,
     "May": 5, "June": 6, "July": 7, "August": 8,
@@ -45,16 +54,19 @@ month_map = {
 
 @app.get("/")
 def root():
-    return {"message": "✅ API is running! Go to /docs to test predictions."}
+    return {"message": "✅ Bus Prediction API running. Visit /docs to test."}
 
+# 🔍 /predict: for user-side input-based predictions
 @app.post("/predict")
 def predict(input_data: PredictionInput):
     if model is None or encoder is None:
         return {"error": "Model or encoder not loaded."}
+    
     try:
         df = pd.DataFrame([input_data.dict()])
         df["Bus"] = df["Bus"].astype(str).str.strip().str.replace("Bus ", "", case=False)
 
+        # Convert Month name to number if needed
         if isinstance(df["Month"].iloc[0], str):
             df["Month"] = df["Month"].replace(month_map).astype(int)
 
@@ -73,5 +85,48 @@ def predict(input_data: PredictionInput):
             "Predicted_Total_Trips": round(float(prediction[0]), 2),
             "Predicted_Total_Passengers": round(float(prediction[1]), 2)
         }
+
+    except Exception as e:
+        return {"error": str(e)}
+
+# 📊 /forecast: for admin-side next 5 months prediction (no input)
+@app.get("/forecast")
+def forecast_next_5_months():
+    if model is None or encoder is None:
+        return {"error": "Model or encoder not loaded."}
+    
+    try:
+        today = datetime.today()
+        forecast_data = []
+
+        # Predict for next 5 months starting from next month
+        for i in range(1, 6):
+            target_date = today + relativedelta(months=i)
+            year = target_date.year
+            month = target_date.month
+            month_name = target_date.strftime("%B")
+
+            for bus in encoder.classes_:
+                bus_clean = str(bus).replace("Bus ", "")
+                bus_encoded = encoder.transform([bus_clean])[0]
+
+                input_df = pd.DataFrame([{
+                    "Year": year,
+                    "Month": month,
+                    "Bus_Encoded": bus_encoded
+                }])
+
+                prediction = model.predict(input_df)[0]
+
+                forecast_data.append({
+                    "Bus": bus,
+                    "Year": year,
+                    "Month": month_name,
+                    "Predicted_Total_Trips": round(float(prediction[0]), 2),
+                    "Predicted_Total_Passengers": round(float(prediction[1]), 2)
+                })
+
+        return forecast_data
+
     except Exception as e:
         return {"error": str(e)}
