@@ -7,30 +7,36 @@ from pydantic import BaseModel
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Load model & encoder
-with open(os.path.join(BASE_DIR, "model.pkl"), "rb") as f:
-    model = pickle.load(f)
-with open(os.path.join(BASE_DIR, "encoder.pkl"), "rb") as f:
-    encoder = pickle.load(f)
+model = None
+encoder = None
+
+try:
+    with open(os.path.join(BASE_DIR, "model.pkl"), "rb") as f:
+        model = pickle.load(f)
+except Exception as e:
+    print(f"Warning: Could not load model.pkl: {e}")
+
+try:
+    with open(os.path.join(BASE_DIR, "encoder.pkl"), "rb") as f:
+        encoder = pickle.load(f)
+except Exception as e:
+    print(f"Warning: Could not load encoder.pkl: {e}")
 
 app = FastAPI()
 
-# CORS for Flutter web
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Replace "*" with your Flutter web URL in production
+    allow_origins=["*"],  # adjust this in production!
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Input schema
 class PredictionInput(BaseModel):
     Year: int
     Month: int | str
     Bus: str
 
-# Month mapping
 month_map = {
     "January": 1, "February": 2, "March": 3, "April": 4,
     "May": 5, "June": 6, "July": 7, "August": 8,
@@ -43,24 +49,21 @@ def root():
 
 @app.post("/predict")
 def predict(input_data: PredictionInput):
+    if model is None or encoder is None:
+        return {"error": "Model or encoder not loaded."}
     try:
         df = pd.DataFrame([input_data.dict()])
         df["Bus"] = df["Bus"].astype(str).str.strip().str.replace("Bus ", "", case=False)
 
-        # Convert Month
         if isinstance(df["Month"].iloc[0], str):
             df["Month"] = df["Month"].replace(month_map).astype(int)
 
-        # Validate Bus
         if df["Bus"].iloc[0] not in encoder.classes_:
             return {"error": f"Bus '{input_data.Bus}' not recognized. Available: {list(encoder.classes_)}"}
 
         df["Bus_Encoded"] = encoder.transform(df["Bus"])
-
-        # Prepare features
         X_input = df[["Year", "Month", "Bus_Encoded"]]
 
-        # Predict [Total_Trips, Total_Passengers]
         prediction = model.predict(X_input)[0]
 
         return {
