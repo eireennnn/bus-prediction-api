@@ -65,8 +65,8 @@ def predict(input_data: PredictionInput):
             "Year": input_data.Year,
             "Month": input_data.Month,
             "Bus": input_data.Bus,
-            "Predicted_Total_Trips": 
-            "Predicted_Total_Passengers": 
+            "Predicted_Total_Trips": " ";
+            "Predicted_Total_Passengers":
         }
     except Exception as e:
         return {"error": str(e)}
@@ -99,8 +99,8 @@ def forecast_next_5_months():
                     "Bus": bus,
                     "Year": year,
                     "Month": month_name,
-                    "Predicted_Total_Trips": 
-                    "Predicted_Total_Passengers": 
+                    "Predicted_Total_Trips": " ";
+                    "Predicted_Total_Passengers": " "; 
                 })
 
         # Save to CSV
