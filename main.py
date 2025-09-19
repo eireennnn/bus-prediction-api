@@ -105,7 +105,7 @@ def forecast_next_5_months():
 
         # Save to CSV
         df_forecast = pd.DataFrame(forecast_data)
-        csv_path = os.path.join(BASE_DIR, "forecast_output.csv")
+        csv_path = os.path.join(BASE_DIR, "all_years_combined.csv")
         df_forecast.to_csv(csv_path, index=False)
 
         return forecast_data
