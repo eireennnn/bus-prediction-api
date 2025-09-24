@@ -1,38 +1,29 @@
-import os
 import pickle
 import pandas as pd
-from datetime import datetime
-from dateutil.relativedelta import relativedelta
+import calendar
+from collections import defaultdict
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# Load model and encoder
-with open(os.path.join(BASE_DIR, "model.pkl"), "rb") as f:
+# Load model & encoder
+with open("model.pkl", "rb") as f:
     model = pickle.load(f)
-with open(os.path.join(BASE_DIR, "encoder.pkl"), "rb") as f:
+with open("encoder.pkl", "rb") as f:
     encoder = pickle.load(f)
 
 app = FastAPI()
 
-# CORS for frontend connection
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Replace with actual domain in production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Input schema for /predict
+# Input schema
 class PredictionInput(BaseModel):
     Year: int
     Month: int | str
     Bus: str
 
-# Mapping month names to numbers
+class ForecastInput(BaseModel):
+    Year: int
+    Month: int | str
+
+# Month mapping
 month_map = {
     "January": 1, "February": 2, "March": 3, "April": 4,
     "May": 5, "June": 6, "July": 7, "August": 8,
@@ -41,7 +32,7 @@ month_map = {
 
 @app.get("/")
 def root():
-    return {"message": "✅ API is running! Visit /docs to test."}
+    return {"message": "✅ API is running! Go to /docs to test predictions."}
 
 @app.post("/predict")
 def predict(input_data: PredictionInput):
@@ -58,7 +49,11 @@ def predict(input_data: PredictionInput):
             return {"error": f"Bus '{input_data.Bus}' not recognized. Available: {list(encoder.classes_)}"}
 
         df["Bus_Encoded"] = encoder.transform(df["Bus"])
+
+        # Prepare features
         X_input = df[["Year", "Month", "Bus_Encoded"]]
+
+        # Predict [Total_Trips, Total_Passengers]
         prediction = model.predict(X_input)[0]
 
         return {
@@ -71,44 +66,32 @@ def predict(input_data: PredictionInput):
     except Exception as e:
         return {"error": str(e)}
 
-@app.get("/forecast")
-def forecast_next_5_months():
+@app.post("/forecast_next_months")
+def forecast_next_months(data: ForecastInput):
     try:
-        today = datetime.today()
-        forecast_data = []
+        grouped_results = defaultdict(list)
 
-        for i in range(1, 6):  # Next 5 months
-            target_date = today + relativedelta(months=i)
-            year = target_date.year
-            month = target_date.month
-            month_name = target_date.strftime("%B")
+        # Convert month if text
+        month = data.Month
+        if isinstance(month, str):
+            month = month_map[month]
+        year = data.Year
+
+        for i in range(5):  # next 5 months
+            month_num = (month + i - 1) % 12 + 1
+            year_num = year + ((month + i - 1) // 12)
+            month_name = calendar.month_name[month_num]
 
             for bus in encoder.classes_:
-                bus_clean = str(bus).replace("Bus ", "")
-                bus_encoded = encoder.transform([bus_clean])[0]
+                bus_encoded = encoder.transform([bus])[0]
+                prediction = model.predict([[year_num, month_num, bus_encoded]])[0]
 
-                input_df = pd.DataFrame([{
-                    "Year": year,
-                    "Month": month,
-                    "Bus_Encoded": bus_encoded
-                }])
-
-                prediction = model.predict(input_df)[0]
-
-                forecast_data.append({
-                    "Bus": bus,
-                    "Year": year,
-                    "Month": month_name,
+                grouped_results[f"{month_name} {year_num}"].append({
+                    "Bus": f"Bus {bus}",
                     "Predicted_Total_Trips": round(float(prediction[0]), 2),
                     "Predicted_Total_Passengers": round(float(prediction[1]), 2)
                 })
 
-        # Save to CSV
-        df_forecast = pd.DataFrame(forecast_data)
-        csv_path = os.path.join(BASE_DIR, "all_years_combined.csv")
-        df_forecast.to_csv(csv_path, index=False)
-
-        return forecast_data
-
+        return grouped_results
     except Exception as e:
         return {"error": str(e)}
