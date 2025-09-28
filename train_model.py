@@ -1,52 +1,50 @@
 import pandas as pd
-import pickle
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.ensemble import RandomForestRegressor
+import pickle
 
 # Load dataset
 df = pd.read_csv("all_years_combined.csv")
 
-# Normalize Month if text (January -> 1, etc.)
-month_map = {
-    "January": 1, "February": 2, "March": 3, "April": 4,
-    "May": 5, "June": 6, "July": 7, "August": 8,
-    "September": 9, "October": 10, "November": 11, "December": 12
-}
+print("Columns in dataset:", df.columns)
+
+# Drop unnamed column kung meron
+df = df.loc[:, ~df.columns.str.contains("^Unnamed")]
+
+# Encode Month kung string (e.g., September -> 9)
 if df["Month"].dtype == object:
-    df["Month"] = df["Month"].replace(month_map).astype(int)
+    month_map = {
+        "January": 1, "February": 2, "March": 3, "April": 4,
+        "May": 5, "June": 6, "July": 7, "August": 8,
+        "September": 9, "October": 10, "November": 11, "December": 12
+    }
+    df["Month"] = df["Month"].map(month_map)
 
-# Encode Bus names
-encoder = LabelEncoder()
-df["Bus"] = df["Bus"].astype(str).str.strip().str.replace("Bus ", "", case=False)
-encoder.fit(df["Bus"])
-df["Bus_Encoded"] = encoder.transform(df["Bus"])
+# Encode Bus kung text pa siya (e.g., BusA -> 1, BusB -> 2)
+if df["Bus"].dtype == object:
+    df["Bus"] = df["Bus"].astype("category").cat.codes
 
-# Rename columns
-df = df.rename(columns={"Total Trips": "Total_Trips", "Total Passengers": "Total_Passengers"})
+# Features and targets
+X = df[["Year", "Month", "Bus"]]
+y_trips = df["Total Trips"]
+y_passengers = df["Total Passengers"]
 
-# Features and Targets
-X = df[["Year", "Month", "Bus_Encoded"]]
-y = df[["Total_Trips", "Total_Passengers"]]
+# Train-test split
+X_train, X_test, y_train_trips, y_test_trips = train_test_split(X, y_trips, test_size=0.2, random_state=42)
+X_train, X_test, y_train_pass, y_test_pass = train_test_split(X, y_passengers, test_size=0.2, random_state=42)
 
-# Split dataset
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+# Train models
+model_trips = RandomForestRegressor(random_state=42)
+model_trips.fit(X_train, y_train_trips)
 
-# Train model
-model = RandomForestRegressor(n_estimators=200, random_state=42)
-model.fit(X_train, y_train)
+model_passengers = RandomForestRegressor(random_state=42)
+model_passengers.fit(X_train, y_train_pass)
 
-# Evaluate
-y_pred = model.predict(X_test)
-print("MAE:", mean_absolute_error(y_test, y_pred))
-print("RMSE:", mean_squared_error(y_test, y_pred, squared=False))
-print("R²:", r2_score(y_test, y_pred, multioutput="uniform_average"))
+# Save models
+with open("model_trips.pkl", "wb") as f:
+    pickle.dump(model_trips, f)
 
-# Save model + encoder
-with open("model.pkl", "wb") as f:
-    pickle.dump(model, f)
-with open("encoder.pkl", "wb") as f:
-    pickle.dump(encoder, f)
+with open("model_passengers.pkl", "wb") as f:
+    pickle.dump(model_passengers, f)
 
-print("✅ New model trained and saved! Predicts Trips + Passengers.")
+print("✅ Models trained and saved successfully!")
