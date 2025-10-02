@@ -1,17 +1,19 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+import numpy as np
 import pickle
 
-# Load dataset
-df = pd.read_csv("all_years_combined.csv")
+
+df = pd.read_csv("Bus Trips_Passengers.csv")
 
 print("Columns in dataset:", df.columns)
 
-# Drop unnamed column kung meron
+
 df = df.loc[:, ~df.columns.str.contains("^Unnamed")]
 
-# Encode Month kung string (e.g., September -> 9)
+
 if df["Month"].dtype == object:
     month_map = {
         "January": 1, "February": 2, "March": 3, "April": 4,
@@ -20,7 +22,7 @@ if df["Month"].dtype == object:
     }
     df["Month"] = df["Month"].map(month_map)
 
-# Encode Bus kung text pa siya (e.g., BusA -> 1, BusB -> 2)
+
 if df["Bus"].dtype == object:
     df["Bus"] = df["Bus"].astype("category").cat.codes
 
@@ -30,8 +32,12 @@ y_trips = df["Total Trips"]
 y_passengers = df["Total Passengers"]
 
 # Train-test split
-X_train, X_test, y_train_trips, y_test_trips = train_test_split(X, y_trips, test_size=0.2, random_state=42)
-X_train, X_test, y_train_pass, y_test_pass = train_test_split(X, y_passengers, test_size=0.2, random_state=42)
+X_train, X_test, y_train_trips, y_test_trips = train_test_split(
+    X, y_trips, test_size=0.2, random_state=42
+)
+_, X_test_pass, y_train_pass, y_test_pass = train_test_split(
+    X, y_passengers, test_size=0.2, random_state=42
+)
 
 # Train models
 model_trips = RandomForestRegressor(random_state=42)
@@ -48,3 +54,29 @@ with open("model_passengers.pkl", "wb") as f:
     pickle.dump(model_passengers, f)
 
 print("✅ Models trained and saved successfully!")
+
+# -----------------------
+# Evaluate Models
+# -----------------------
+
+# Trips model evaluation
+y_pred_trips = model_trips.predict(X_test)
+mae_trips = mean_absolute_error(y_test_trips, y_pred_trips)
+rmse_trips = np.sqrt(mean_squared_error(y_test_trips, y_pred_trips))
+r2_trips = r2_score(y_test_trips, y_pred_trips)
+
+print("\n Trips Model Performance:")
+print(f"MAE: {mae_trips:.2f}")
+print(f"RMSE: {rmse_trips:.2f}")
+print(f"R²: {r2_trips:.2f}")
+
+# Passengers model evaluation
+y_pred_pass = model_passengers.predict(X_test_pass)
+mae_pass = mean_absolute_error(y_test_pass, y_pred_pass)
+rmse_pass = np.sqrt(mean_squared_error(y_test_pass, y_pred_pass))
+r2_pass = r2_score(y_test_pass, y_pred_pass)
+
+print("\n Passengers Model Performance:")
+print(f"MAE: {mae_pass:.2f}")
+print(f"RMSE: {rmse_pass:.2f}")
+print(f"R²: {r2_pass:.2f}")
