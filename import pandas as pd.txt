@@ -1,0 +1,8 @@
+import pandas as pd
+
+# Load the Excel file
+df = pd.read_excel("2018-2024 - Bus Trips & Passengers.xlsx")
+
+print("🧾 Columns:", df.columns.tolist())
+print("\n📊 Sample data:")
+print(df.head())
